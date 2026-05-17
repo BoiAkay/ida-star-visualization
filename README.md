@@ -6,7 +6,7 @@
 
 A dynamic, interactive web visualization of the **Iterative Deepening A* (IDA*)** search algorithm, applied to the classic "Map of Romania" problem from Stuart Russell and Peter Norvig’s textbook, *Artificial Intelligence: A Modern Approach*.
 
-> 🚀 **[Play with the Live Demo Here](https://[YOUR-USERNAME].github.io/ida-star-visualization/)** > *(Note: Replace `[YOUR-USERNAME]` with your actual GitHub username in this link!)*
+> 🚀 **[Play with the Live Demo Here](https://boiakay.github.io/ida-star-visualization/)** > *(Note: Replace `[YOUR-USERNAME]` with your actual GitHub username in this link!)*
 
 ---
 
