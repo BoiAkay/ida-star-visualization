@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDA* - Map of Romania</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f8f9fa; margin: 0; padding: 20px; }
+        h1 { color: #333; margin-bottom: 5px; }
+        .controls { margin: 15px 0; display: flex; gap: 15px; align-items: center; background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #0d6efd; color: white; border: none; border-radius: 5px; font-weight: bold; transition: 0.2s; }
+        button:hover { background-color: #0b5ed7; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .speed-control { display: flex; align-items: center; gap: 10px; font-weight: bold; color: #555; border-left: 2px solid #dee2e6; padding-left: 15px; }
+        input[type="range"] { cursor: pointer; }
+        .dashboard { display: flex; justify-content: space-between; width: 800px; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .stat-box { display: flex; flex-direction: column; align-items: center; }
+        .stat-value { font-size: 20px; font-weight: bold; color: #dc3545; }
+        canvas { background-color: white; border: 2px solid #dee2e6; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        
+        /* Table Styles */
+        .tables-section { display: flex; gap: 20px; width: 800px; margin-top: 20px; }
+        .table-col { flex: 1; display: flex; flex-direction: column; }
+        .table-col h3 { margin: 0 0 10px 0; color: #333; font-size: 18px; }
+        .table-wrapper { flex-grow: 1; max-height: 250px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 5px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+        th, td { border-bottom: 1px solid #dee2e6; padding: 8px 12px; }
+        th { background-color: #e9ecef; position: sticky; top: 0; z-index: 1; }
+        tr:last-child td { border-bottom: none; }
+        tr.active-node { background-color: #e0f7fa; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>IDA* Algorithm: Map of Romania</h1>
+    
+    <div class="controls">
+        <button id="startBtn" onclick="runIDAStar()">Start Search</button>
+        <button onclick="resetViz()">Reset</button>
+        
+        <div class="speed-control">
+            <label for="speedSlider">Speed:</label>
+            <input type="range" id="speedSlider" min="1" max="5" value="3" oninput="updateSpeedLabel()">
+            <span id="speedLabel" style="width: 60px;">Normal</span>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="stat-box"><span>Depth Threshold</span><span class="stat-value" id="valThreshold">-</span></div>
+        <div class="stat-box"><span>Current Node</span><span class="stat-value" id="valNode" style="color: #0dcaf0;">-</span></div>
+        <div class="stat-box"><span>Current f-cost</span><span class="stat-value" id="valF">-</span></div>
+        <div class="stat-box"><span>Status</span><span class="stat-value" id="valStatus" style="color: #198754;">Waiting</span></div>
+    </div>
+
+    <canvas id="mapCanvas" width="800" height="550"></canvas>
+
+    <div class="tables-section">
+        <div class="table-col">
+            <h3>Heuristic Values (h)</h3>
+            <div class="table-wrapper" id="hTableWrapper">
+                </div>
+        </div>
+        <div class="table-col">
+            <h3>Current Path Computed Values</h3>
+            <div class="table-wrapper" id="compTableWrapper">
+                <table>
+                    <tr><th>City</th><th>g(n)</th><th>h(n)</th><th>f(n)</th></tr>
+                    <tr><td colspan="4" style="text-align: center; color: #6c757d;">Start search to view data</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const graph = {
+        'Arad': {'Zerind': 75, 'Sibiu': 140, 'Timisoara': 118},
+        'Zerind': {'Arad': 75, 'Oradea': 71},
+        'Oradea': {'Zerind': 71, 'Sibiu': 151},
+        'Sibiu': {'Arad': 140, 'Oradea': 151, 'Fagaras': 99, 'Rimnicu Vilcea': 80},
+        'Timisoara': {'Arad': 118, 'Lugoj': 111},
+        'Lugoj': {'Timisoara': 111, 'Mehadia': 70},
+        'Mehadia': {'Lugoj': 70, 'Drobeta': 75},
+        'Drobeta': {'Mehadia': 75, 'Craiova': 120},
+        'Craiova': {'Drobeta': 120, 'Rimnicu Vilcea': 146, 'Pitesti': 138},
+        'Rimnicu Vilcea': {'Sibiu': 80, 'Craiova': 146, 'Pitesti': 97},
+        'Fagaras': {'Sibiu': 99, 'Bucharest': 211},
+        'Pitesti': {'Rimnicu Vilcea': 97, 'Craiova': 138, 'Bucharest': 101},
+        'Bucharest': {'Fagaras': 211, 'Pitesti': 101, 'Giurgiu': 90, 'Urziceni': 85},
+        'Giurgiu': {'Bucharest': 90},
+        'Urziceni': {'Bucharest': 85, 'Vaslui': 142, 'Hirsova': 98},
+        'Hirsova': {'Urziceni': 98, 'Eforie': 86},
+        'Eforie': {'Hirsova': 86},
+        'Vaslui': {'Urziceni': 142, 'Iasi': 92},
+        'Iasi': {'Vaslui': 92, 'Neamt': 87},
+        'Neamt': {'Iasi': 87}
+    };
+
+    const heuristic = {
+        'Arad': 366, 'Bucharest': 0, 'Craiova': 160, 'Drobeta': 242, 'Eforie': 161, 
+        'Fagaras': 176, 'Giurgiu': 77, 'Hirsova': 151, 'Iasi': 226, 'Lugoj': 244, 
+        'Mehadia': 241, 'Neamt': 234, 'Oradea': 380, 'Pitesti': 100, 'Rimnicu Vilcea': 193, 
+        'Sibiu': 253, 'Timisoara': 329, 'Urziceni': 80, 'Vaslui': 199, 'Zerind': 374
+    };
+
+    const coords = {
+        'Arad': {x: 80, y: 200}, 'Zerind': {x: 100, y: 100}, 'Oradea': {x: 160, y: 50}, 
+        'Sibiu': {x: 280, y: 250}, 'Timisoara': {x: 80, y: 350}, 'Lugoj': {x: 180, y: 400}, 
+        'Mehadia': {x: 190, y: 480}, 'Drobeta': {x: 170, y: 530}, 'Craiova': {x: 320, y: 530}, 
+        'Rimnicu Vilcea': {x: 300, y: 350}, 'Fagaras': {x: 450, y: 260}, 'Pitesti': {x: 450, y: 420}, 
+        'Bucharest': {x: 600, y: 480}, 'Giurgiu': {x: 580, y: 530}, 'Urziceni': {x: 680, y: 420}, 
+        'Hirsova': {x: 760, y: 420}, 'Eforie': {x: 770, y: 520}, 'Vaslui': {x: 710, y: 280}, 
+        'Iasi': {x: 660, y: 160}, 'Neamt': {x: 550, y: 130}
+    };
+
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let isRunning = false;
+    let renderState = { path: [], current: null, foundPath: null };
+
+    // Speed Control Logic
+    const speedMap = {
+        1: { label: "Slowest", delay: 1500 },
+        2: { label: "Slow", delay: 800 },
+        3: { label: "Normal", delay: 400 },
+        4: { label: "Fast", delay: 150 },
+        5: { label: "Fastest", delay: 20 }
+    };
+
+    function updateSpeedLabel() {
+        const val = document.getElementById('speedSlider').value;
+        document.getElementById('speedLabel').innerText = speedMap[val].label;
+    }
+
+    function getDelay() {
+        const val = document.getElementById('speedSlider').value;
+        return speedMap[val].delay;
+    }
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Populate Heuristic Table
+    function initHeuristicTable() {
+        let html = '<table><tr><th>City</th><th>h(n)</th></tr>';
+        Object.keys(heuristic).sort().forEach(city => {
+            html += `<tr><td>${city}</td><td>${heuristic[city]}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('hTableWrapper').innerHTML = html;
+    }
+
+    // Update Computed Values Table
+    function updateComputedTable(path) {
+        let html = '<table><tr><th>City</th><th>g(n)</th><th>h(n)</th><th>f(n)</th></tr>';
+        let currentG = 0;
+        
+        for (let i = 0; i < path.length; i++) {
+            let node = path[i];
+            if (i > 0) currentG += graph[path[i-1]][node]; 
+            
+            let h = heuristic[node];
+            let f = currentG + h;
+            
+            let rowClass = (i === path.length - 1) ? 'class="active-node"' : '';
+            
+            html += `<tr ${rowClass}>
+                        <td>${node}</td>
+                        <td>${currentG}</td>
+                        <td>${h}</td>
+                        <td style="color:#dc3545;"><strong>${f}</strong></td>
+                     </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('compTableWrapper').innerHTML = html;
+        
+        const wrapper = document.getElementById('compTableWrapper');
+        wrapper.scrollTop = wrapper.scrollHeight;
+    }
+
+    function drawMap() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.lineWidth = 2;
+        let drawnEdges = new Set();
+        for (let node in graph) {
+            for (let neighbor in graph[node]) {
+                let edgeId = [node, neighbor].sort().join('-');
+                if (!drawnEdges.has(edgeId)) {
+                    drawnEdges.add(edgeId);
+                    
+                    if (renderState.foundPath && renderState.foundPath.includes(node) && renderState.foundPath.includes(neighbor) && Math.abs(renderState.foundPath.indexOf(node) - renderState.foundPath.indexOf(neighbor)) === 1) {
+                        ctx.strokeStyle = '#198754'; ctx.lineWidth = 5;
+                    } else if (!renderState.foundPath && renderState.path.includes(node) && renderState.path.includes(neighbor) && Math.abs(renderState.path.indexOf(node) - renderState.path.indexOf(neighbor)) === 1) {
+                        ctx.strokeStyle = '#ffc107'; ctx.lineWidth = 4;
+                    } else {
+                        ctx.strokeStyle = '#dee2e6'; ctx.lineWidth = 2;
+                    }
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(coords[node].x, coords[node].y);
+                    ctx.lineTo(coords[neighbor].x, coords[neighbor].y);
+                    ctx.stroke();
+                    
+                    let midX = (coords[node].x + coords[neighbor].x) / 2;
+                    let midY = (coords[node].y + coords[neighbor].y) / 2;
+                    ctx.fillStyle = '#6c757d';
+                    ctx.font = '12px Arial';
+                    ctx.fillText(graph[node][neighbor], midX, midY - 5);
+                }
+            }
+        }
+
+        for (let node in coords) {
+            ctx.beginPath();
+            ctx.arc(coords[node].x, coords[node].y, 10, 0, 2 * Math.PI);
+            
+            if (node === 'Arad' || node === 'Bucharest') ctx.fillStyle = '#198754';
+            else if (node === renderState.current) ctx.fillStyle = '#0dcaf0';
+            else if (renderState.path.includes(node) || (renderState.foundPath && renderState.foundPath.includes(node))) ctx.fillStyle = '#ffc107';
+            else ctx.fillStyle = '#f8f9fa';
+
+            ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = '#333';
+            ctx.font = '14px Arial';
+            ctx.fillText(node, coords[node].x - 15, coords[node].y - 15);
+        }
+    }
+
+    function updateDashboard(threshold, node, f, status) {
+        document.getElementById('valThreshold').innerText = threshold;
+        document.getElementById('valNode').innerText = node;
+        document.getElementById('valF').innerText = f !== null ? f : '-';
+        document.getElementById('valStatus').innerText = status;
+    }
+
+    async function runIDAStar() {
+        if (isRunning) return;
+        isRunning = true;
+        document.getElementById('startBtn').disabled = true;
+        renderState.foundPath = null;
+
+        let start = 'Arad';
+        let goal = 'Bucharest';
+        let threshold = heuristic[start];
+        let path = [start];
+
+        while (true) {
+            updateDashboard(threshold, '-', null, 'Iterating');
+            let temp = await search(path, 0, threshold, goal);
+            
+            if (temp === "FOUND") {
+                renderState.foundPath = [...path];
+                updateDashboard(threshold, goal, '-', 'Path Found!');
+                drawMap();
+                break;
+            }
+            if (temp === Infinity) {
+                updateDashboard(threshold, '-', '-', 'No Path');
+                break;
+            }
+            threshold = temp;
+        }
+        
+        isRunning = false;
+        document.getElementById('startBtn').disabled = false;
+    }
+
+    async function search(path, g, threshold, goal) {
+        let node = path[path.length - 1];
+        let f = g + heuristic[node];
+        
+        renderState.path = path;
+        renderState.current = node;
+        updateDashboard(threshold, node, f, 'Searching');
+        updateComputedTable(path);
+        drawMap();
+        await sleep(getDelay()); 
+
+        if (f > threshold) return f;
+        if (node === goal) return "FOUND";
+        
+        let min = Infinity;
+        let neighbors = Object.keys(graph[node]).sort();
+        
+        for (let neighbor of neighbors) {
+            if (!path.includes(neighbor)) {
+                path.push(neighbor);
+                let cost = graph[node][neighbor];
+                
+                let temp = await search(path, g + cost, threshold, goal);
+                
+                if (temp === "FOUND") return "FOUND";
+                if (temp < min) min = temp;
+                
+                path.pop(); // Backtrack
+                
+                renderState.path = path;
+                renderState.current = node;
+                updateDashboard(threshold, node, f, 'Backtracking');
+                updateComputedTable(path);
+                drawMap();
+                await sleep(getDelay() * 0.75); // Backtracking is slightly faster 
+            }
+        }
+        return min;
+    }
+
+    function resetViz() {
+        if(isRunning) return;
+        renderState = { path: [], current: null, foundPath: null };
+        updateDashboard('-', '-', '-', 'Waiting');
+        document.getElementById('compTableWrapper').innerHTML = '<table><tr><th>City</th><th>g(n)</th><th>h(n)</th><th>f(n)</th></tr><tr><td colspan="4" style="text-align: center; color: #6c757d;">Start search to view data</td></tr></table>';
+        drawMap();
+    }
+
+    // Initialize
+    initHeuristicTable();
+    drawMap();
+</script>
+</body>
+</html>
